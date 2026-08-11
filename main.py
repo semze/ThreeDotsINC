@@ -24,8 +24,7 @@ from direct.actor.Actor import Actor
 
 app = Ursina(development_mode=False)
 
-# --- BORDERLESS WINDOWED FULLSCREEN SETUP ---
-
+# --- SCREEN SETUP ---
 from panda3d.core import WindowProperties
 props = WindowProperties()
 props.setUndecorated(True)
@@ -33,10 +32,9 @@ props.setOrigin(0, 0)
 props.setSize(1920, 1080)
 base.win.requestProperties(props)
 
-
 window.fullscreen = False
 window.borderless = True
-window.size = (1920, 1040)  # Slightly reduced height to stay above the Windows taskbar
+window.size = (1920, 1040)
 window.position = (0, 0)
 window.exit_button.visible = False
 window.color = color.rgb(2, 2, 8)
@@ -83,7 +81,7 @@ my_id = str(random.randint(10000, 99999))
 spawn_x = ((int(my_id) % 9) - 4) * 3
 spawn_z = (((int(my_id) // 9) % 9) - 4) * 3
 
-selected_character = "red"  # Default character choice
+selected_character = "red"  
 
 player = FirstPersonController(x=spawn_x, y=100, z=spawn_z, origin_y=-.5)
 player.cursor.visible = True
@@ -418,7 +416,6 @@ def load_json_map(filename):
     except Exception as ex:
         print(f"Error loading map json: {ex}")
 
-# Load map from the new maps folder
 load_json_map("maps/my_custom_map.json")
 
 # --- STARTUP INTRO VIDEO OVERLAY ---
@@ -501,6 +498,7 @@ def toggle_menu():
     menu_background.enabled = menu_open
     for btn in menu_buttons:
         btn.enabled = menu_open
+    ip_input.enabled = menu_open
         
     if menu_open:
         try:
@@ -578,10 +576,25 @@ def reload_map_action():
 
 def join_server_action():
     play_click_sound()
-    status_text.text = "STATUS: LINK ESTABLISHED"
-    status_text.color = color.rgb(50, 255, 100)
+    target_address = ip_input.text.strip()
+    if not target_address:
+        target_address = "127.0.0.1"
+    
+    # Check if user typed a colon for port (e.g., ip:port), otherwise default port 55555
+    if ":" in target_address:
+        host, port_str = target_address.split(":", 1)
+        try:
+            port = int(port_str)
+        except ValueError:
+            port = 55555
+    else:
+        host = target_address
+        port = 55555
+
+    status_text.text = f"STATUS: CONNECTING TO {host}:{port}..."
+    status_text.color = color.rgb(255, 200, 0)
     toggle_menu()
-    start_client()
+    start_client(host, port)
 
 def resume_action():
     play_click_sound()
@@ -602,33 +615,47 @@ class CyberButton(Button):
             play_hover_sound()
         self._was_hovered = self.hovered if self.enabled else False
 
+# --- UI BUTTONS & INPUT FIELD ---
 char_btn = CyberButton(
-    parent=menu_background, text="[ ACTIVE CLASS: SYN-0 (RED) ]", position=(0, 0.12),
-    scale=(0.88, 0.08), z=-0.05, color=color.clear,
+    parent=menu_background, text="[ ACTIVE CLASS: SYN-0 (RED) ]", position=(0, 0.16),
+    scale=(0.88, 0.07), z=-0.05, color=color.clear,
     highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
     text_color=color.rgb(255, 80, 80), on_click=toggle_character_choice
 )
+
 map_btn = CyberButton(
-    parent=menu_background, text="[ RELOAD MAP ]", position=(0, 0.02),
-    scale=(0.88, 0.08), z=-0.05, color=color.clear,
+    parent=menu_background, text="[ RELOAD MAP ]", position=(0, 0.08),
+    scale=(0.88, 0.07), z=-0.05, color=color.clear,
     highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
     text_color=color.rgb(0, 230, 255), on_click=reload_map_action
 )
-join_btn = CyberButton(
-    parent=menu_background, text="[ JOIN SERVER ]", position=(0, -0.08),
-    scale=(0.88, 0.08), z=-0.05, color=color.clear,
-    highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
-    text_color=color.rgb(0, 230, 255), on_click=join_server_action
+
+# Input field for IP / Hostname
+ip_input = InputField(
+    parent=menu_background,
+    default_value='127.0.0.1:55555',
+    position=(0, -0.01),
+    scale=(0.88, 0.07),
+    z=-0.05
 )
+
+join_btn = CyberButton(
+    parent=menu_background, text="[ CONNECT TO IP / HOST ]", position=(0, -0.10),
+    scale=(0.88, 0.07), z=-0.05, color=color.clear,
+    highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
+    text_color=color.rgb(50, 255, 100), on_click=join_server_action
+)
+
 resume_btn = CyberButton(
-    parent=menu_background, text="[ RESUME GAME ]", position=(0, -0.18),
-    scale=(0.88, 0.08), z=-0.05, color=color.clear,
+    parent=menu_background, text="[ RESUME GAME ]", position=(0, -0.19),
+    scale=(0.88, 0.07), z=-0.05, color=color.clear,
     highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
     text_color=color.rgb(180, 230, 255), on_click=resume_action
 )
+
 quit_btn = CyberButton(
     parent=menu_background, text="[ QUIT APPLICATION ]", position=(0, -0.28),
-    scale=(0.88, 0.08), z=-0.05, color=color.clear,
+    scale=(0.88, 0.07), z=-0.05, color=color.clear,
     highlight_color=color.rgba(0, 120, 240, 60), pressed_color=color.rgba(0, 80, 160, 100),
     text_color=color.rgb(255, 65, 65), on_click=quit_action
 )
@@ -636,6 +663,7 @@ quit_btn = CyberButton(
 menu_buttons = [char_btn, map_btn, join_btn, resume_btn, quit_btn]
 for btn in menu_buttons:
     btn.enabled = False
+ip_input.enabled = False
 
 # --- NETWORKING CLIENT ARCHITECTURE ---
 is_networking = False
@@ -676,22 +704,32 @@ def get_local_player_packet():
         "firing": is_firing_local
     }
 
-def start_client():
+def start_client(host, port):
     global conn_socket, is_networking
     if conn_socket: 
         return
     
-    is_networking = True
-    conn_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    conn_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    try:
-        conn_socket.connect(('127.0.0.1', 55555)) 
-        threading.Thread(target=client_receive_loop, daemon=True).start()
-    except Exception:
-        conn_socket = None
-        is_networking = False
+    def connection_thread():
+        global conn_socket, is_networking
+        is_networking = True
+        temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        temp_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        try:
+            temp_socket.connect((host, port))
+            conn_socket = temp_socket
+            status_text.text = "STATUS: LINK ESTABLISHED"
+            status_text.color = color.rgb(50, 255, 100)
+            client_receive_loop()
+        except Exception as e:
+            status_text.text = "STATUS: CONNECTION FAILED"
+            status_text.color = color.rgb(255, 50, 50)
+            conn_socket = None
+            is_networking = False
+
+    threading.Thread(target=connection_thread, daemon=True).start()
 
 def client_receive_loop():
+    global conn_socket, is_networking
     try:
         rfile = conn_socket.makefile('r')
         while True:
@@ -710,7 +748,8 @@ def client_receive_loop():
                 
             time.sleep(0.015)
     except Exception:
-        pass
+        conn_socket = None
+        is_networking = False
 
 def process_network_packets():
     global local_health, local_is_dead
