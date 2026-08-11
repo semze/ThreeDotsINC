@@ -580,7 +580,6 @@ def join_server_action():
     if not target_address:
         target_address = "127.0.0.1"
     
-    # Check if user typed a colon for port (e.g., ip:port), otherwise default port 55555
     if ":" in target_address:
         host, port_str = target_address.split(":", 1)
         try:
@@ -591,7 +590,7 @@ def join_server_action():
         host = target_address
         port = 55555
 
-    status_text.text = f"STATUS: CONNECTING TO {host}:{port}..."
+    status_text.text = f"STATUS: LINKING UDP TO {host}:{port}..."
     status_text.color = color.rgb(255, 200, 0)
     toggle_menu()
     start_client(host, port)
@@ -630,7 +629,6 @@ map_btn = CyberButton(
     text_color=color.rgb(0, 230, 255), on_click=reload_map_action
 )
 
-# Input field for IP / Hostname
 ip_input = InputField(
     parent=menu_background,
     default_value='127.0.0.1:55555',
@@ -665,16 +663,17 @@ for btn in menu_buttons:
     btn.enabled = False
 ip_input.enabled = False
 
-# --- NETWORKING CLIENT ARCHITECTURE ---
+# --- UDP NETWORKING CLIENT ARCHITECTURE ---
 is_networking = False
-conn_socket = None
+udp_socket = None
+server_address = None
 
 def send_network_packet(packet_dict):
-    global conn_socket
-    if conn_socket:
+    global udp_socket, server_address
+    if udp_socket and server_address:
         try:
             raw = json.dumps(packet_dict) + '\n'
-            conn_socket.sendall(raw.encode())
+            udp_socket.sendto(raw.encode('utf-8'), server_address)
         except Exception:
             pass
 
@@ -705,51 +704,59 @@ def get_local_player_packet():
     }
 
 def start_client(host, port):
-    global conn_socket, is_networking
-    if conn_socket: 
+    global udp_socket, server_address, is_networking
+    if udp_socket: 
         return
     
     def connection_thread():
-        global conn_socket, is_networking
-        is_networking = True
-        temp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        temp_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        global udp_socket, server_address, is_networking
         try:
-            temp_socket.connect((host, port))
-            conn_socket = temp_socket
-            status_text.text = "STATUS: LINK ESTABLISHED"
+            try:
+                resolved_ip = socket.gethostbyname(host)
+            except Exception:
+                resolved_ip = "127.0.0.1"
+                
+            server_address = (resolved_ip, port)
+            
+            udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            udp_socket.settimeout(1.0)
+            
+            is_networking = True
+            status_text.text = "STATUS: LINK ESTABLISHED (UDP)"
             status_text.color = color.rgb(50, 255, 100)
-            client_receive_loop()
+            
+            threading.Thread(target=client_receive_loop, daemon=True).start()
         except Exception as e:
-            status_text.text = "STATUS: CONNECTION FAILED"
+            status_text.text = f"STATUS: FAILED ({str(e)[:15]})"
             status_text.color = color.rgb(255, 50, 50)
-            conn_socket = None
+            udp_socket = None
             is_networking = False
 
     threading.Thread(target=connection_thread, daemon=True).start()
 
 def client_receive_loop():
-    global conn_socket, is_networking
-    try:
-        rfile = conn_socket.makefile('r')
-        while True:
-            if not conn_socket:
-                break
-            
+    global udp_socket, is_networking
+    while is_networking and udp_socket:
+        try:
             packet = get_local_player_packet()
-            conn_socket.sendall((json.dumps(packet) + '\n').encode())
+            send_network_packet(packet)
             
-            line = rfile.readline()
-            if not line: break
-            server_packet = json.loads(line.strip())
-            
-            if server_packet.get('id') != my_id:
-                packet_queue.put(server_packet)
-                
+            data, _ = udp_socket.recvfrom(4096)
+            if data:
+                server_packet = json.loads(data.decode('utf-8').strip())
+                if server_packet.get('id') != my_id:
+                    packet_queue.put(server_packet)
+                    
             time.sleep(0.015)
-    except Exception:
-        conn_socket = None
-        is_networking = False
+        except socket.timeout:
+            continue
+        except OSError as e:
+            if hasattr(e, 'winerror') and e.winerror == 10054:
+                time.sleep(0.1)
+                continue
+            break
+        except Exception:
+            break
 
 def process_network_packets():
     global local_health, local_is_dead
